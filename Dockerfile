@@ -1,24 +1,32 @@
 FROM louislam/uptime-kuma:2.1.3
 
-# Optional: custom config or additions
 EXPOSE 3001
 
 VOLUME ["/app/data"]
 ```
 
-# ## How It Works
+## What Went Wrong
 
-# | Step | What Happens |
-# |------|-------------|
-# | Trigger | Runs on every push to `main` or manually |
-# | Login | Uses your `DOCKER_USERNAME` + `DOCKER_PASSWORD` secrets |
-# | Build | Builds the image from your `Dockerfile` |
-# | Push | Pushes two tags: `2.1.3` and `latest` |
-# | Cache | GitHub Actions cache speeds up future builds |
+Your `Dockerfile` currently looks like this (wrong ❌):
+```
+FROM louislam/uptime-kuma:2.1.3
+...
+VOLUME ["/app/data"]
+```     ← these backticks got included
+```
+# ## How It Works    ← and even markdown text!
+```
 
-# ## Result on Docker Hub
+The Docker parser hit the ` ``` ` on line 7 and didn't know what to do with it.
 
-# Your image will be available at:
-# ```
-# docker.io/<your-username>/uptime-kuma:2.1.3
-# docker.io/<your-username>/uptime-kuma:latest
+## Fix Steps
+
+1. Go to your repo → find the `Dockerfile` in the root
+2. Edit it and **delete everything except** the 4 lines above
+3. Commit & push — the Action will re-run automatically
+
+## Also — The Submodule Warning
+
+You also have this error:
+```
+fatal: No url found for submodule path 'uptime-kuma' in .gitmodules
