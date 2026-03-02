@@ -1,24 +1,24 @@
-# Use Node 18 Alpine
-FROM node:18-alpine
+FROM louislam/uptime-kuma:2.1.3
 
-# Set working directory
-WORKDIR /app
-
-# Copy package files from subfolder
-COPY ./uptime-kuma/package*.json ./
-
-# Install dependencies
-# Use npm install instead of npm ci to avoid lockfile issues in CI
-RUN npm install --omit=dev --legacy-peer-deps
-
-# Copy all source code from subfolder
-COPY ./uptime-kuma/ ./
-
-# Build frontend (if needed)
-RUN npm run build
-
-# Expose port
+# Optional: custom config or additions
 EXPOSE 3001
 
-# Start server
-CMD ["node", "server/server.js"]
+VOLUME ["/app/data"]
+```
+
+# ## How It Works
+
+# | Step | What Happens |
+# |------|-------------|
+# | Trigger | Runs on every push to `main` or manually |
+# | Login | Uses your `DOCKER_USERNAME` + `DOCKER_PASSWORD` secrets |
+# | Build | Builds the image from your `Dockerfile` |
+# | Push | Pushes two tags: `2.1.3` and `latest` |
+# | Cache | GitHub Actions cache speeds up future builds |
+
+# ## Result on Docker Hub
+
+# Your image will be available at:
+# ```
+# docker.io/<your-username>/uptime-kuma:2.1.3
+# docker.io/<your-username>/uptime-kuma:latest
