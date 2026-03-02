@@ -1,15 +1,16 @@
+# Dockerfile (in repo root)
 FROM node:18-alpine
 
 WORKDIR /app
 
-# Copy package files
-COPY package.json package-lock.json ./
+# Copy package.json and package-lock.json from subfolder
+COPY uptime-kuma/package.json uptime-kuma/package-lock.json ./
 
-# Install dependencies (omit dev)
+# Install dependencies
 RUN npm ci --omit=dev --legacy-peer-deps
 
-# Copy source code
-COPY . .
+# Copy all source code
+COPY uptime-kuma/ ./
 
 # Build frontend
 RUN npm run build
