@@ -1,21 +1,24 @@
-# Dockerfile
 FROM node:18-alpine
 
-# Set workdir
 WORKDIR /app
 
-# Copy package.json first to install deps
-COPY package.json package-lock.json ./
-RUN npm ci --omit=dev
+# Upgrade npm to latest stable
+RUN npm install -g npm@11.11.0
 
-# Copy all source code
+# Copy package files
+COPY package.json package-lock.json ./
+
+# Install dependencies safely
+RUN npm ci --omit=dev --legacy-peer-deps
+
+# Copy source code
 COPY . .
 
-# Build front-end (optional, Uptime Kuma uses npm run build)
+# Build frontend
 RUN npm run build
 
 # Expose port
 EXPOSE 3001
 
-# Start
+# Start server
 CMD ["node", "server/server.js"]
