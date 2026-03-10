@@ -20,24 +20,137 @@ project/
 
 ---
 
-## Quick Start
+## Step 1 — Install Docker & Docker Compose
 
-### 1. Clone or copy the project files
+Skip this section if Docker is already installed. Verify with:
 
-Place all files following the structure above.
+```bash
+docker --version
+docker compose version
+```
 
-### 2. Set your passwords
+### Ubuntu / Debian
 
-Open **`.env`** and change every value:
+**1. Remove old versions**
+```bash
+sudo apt remove docker docker-engine docker.io containerd runc 2>/dev/null
+```
+
+**2. Install dependencies**
+```bash
+sudo apt update
+sudo apt install -y ca-certificates curl gnupg lsb-release
+```
+
+**3. Add Docker's official GPG key**
+```bash
+sudo install -m 0755 -d /etc/apt/keyrings
+curl -fsSL https://download.docker.com/linux/ubuntu/gpg \
+  | sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg
+sudo chmod a+r /etc/apt/keyrings/docker.gpg
+```
+
+**4. Add Docker repository**
+```bash
+echo \
+  "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] \
+  https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable" \
+  | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
+```
+
+**5. Install Docker Engine and Compose plugin**
+```bash
+sudo apt update
+sudo apt install -y docker-ce docker-ce-cli containerd.io docker-compose-plugin
+```
+
+**6. Start Docker and allow running without sudo**
+```bash
+sudo systemctl enable --now docker
+sudo usermod -aG docker $USER
+newgrp docker   # apply group change without logging out
+```
+
+---
+
+### CentOS / RHEL / Rocky Linux
+
+**1. Remove old versions**
+```bash
+sudo yum remove docker docker-client docker-client-latest \
+  docker-common docker-latest docker-latest-logrotate \
+  docker-logrotate docker-engine 2>/dev/null
+```
+
+**2. Add Docker repository**
+```bash
+sudo yum install -y yum-utils
+sudo yum-config-manager \
+  --add-repo https://download.docker.com/linux/centos/docker-ce.repo
+```
+
+**3. Install Docker Engine and Compose plugin**
+```bash
+sudo yum install -y docker-ce docker-ce-cli containerd.io docker-compose-plugin
+```
+
+**4. Start Docker and allow running without sudo**
+```bash
+sudo systemctl enable --now docker
+sudo usermod -aG docker $USER
+newgrp docker   # apply group change without logging out
+```
+
+---
+
+### Verify Installation
+
+```bash
+docker --version
+docker compose version
+```
+
+Expected output:
+```
+Docker version 27.x.x, build xxxxxxx
+Docker Compose version v2.x.x
+```
+
+> **Note:** This stack requires **Docker Compose v2** (`docker compose` with a space).
+> The deploy script supports both v1 and v2 but v2 is recommended.
+
+---
+
+## Step 2 — Configure the Project
+
+### 1. Copy project files
+
+Place all files on your server following the project structure above.
+
+```bash
+# Example — copy from local machine to server
+scp -r ./project user@your-server:/opt/uptime-kuma
+```
+
+Or clone if hosted in a git repo:
+
+```bash
+git clone https://your-repo-url.git /opt/uptime-kuma
+cd /opt/uptime-kuma
+```
+
+### 2. Set passwords
+
+Open **`.env`** and change every credential:
 
 ```env
-# ── MariaDB ─────────────────────────────────────────
+# ── MariaDB ──────────────────────────────────────────────────
 MARIADB_ROOT_PASSWORD=rootpassword    # ← change this
 MARIADB_DATABASE=uptimekuma
 MARIADB_USER=kuma
 MARIADB_PASSWORD=kumapass             # ← change this
 
-# ── Uptime Kuma → DB connection ─────────────────────
+# ── Uptime Kuma → DB connection ──────────────────────────────
 KU_DB_TYPE=mysql
 KU_DB_HOST=kuma-db
 KU_DB_PORT=3306
@@ -46,45 +159,108 @@ KU_DB_USER=kuma
 KU_DB_PASSWORD=kumapass               # ← must match MARIADB_PASSWORD above
 ```
 
-> **Rule:** `KU_DB_PASSWORD` must always match `MARIADB_PASSWORD`.
+> ⚠️ **Rule:** `KU_DB_PASSWORD` must always be identical to `MARIADB_PASSWORD`.
+> Mismatch causes `Access denied` on startup.
 
 ### 3. Set your domain (FQDN)
 
-Open **`nginx/default.conf`** and replace the domain in two places:
+Open **`nginx/default.conf`** and replace the domain in **both** server blocks:
 
 ```nginx
 server {
     listen 443 ssl;
-    server_name kuma.domain.com;    # ← change to your domain
+    server_name kuma.your-domain.com;    # ← change this
     ...
 }
 
 server {
     listen 80;
-    server_name kuma.domain.com;    # ← change to your domain
+    server_name kuma.your-domain.com;    # ← change this
     ...
 }
 ```
 
-### 4. Place your SSL certificates
+### 4. Place SSL certificates
 
 Copy your certificate files into `nginx/certs/`:
 
-```
-nginx/certs/tls.crt    ← full chain certificate
-nginx/certs/tls.key    ← private key
+```bash
+cp /path/to/your/fullchain.pem nginx/certs/tls.crt
+cp /path/to/your/privkey.pem   nginx/certs/tls.key
 ```
 
-> If you don't have a certificate yet, see [Get a free SSL certificate](#get-a-free-ssl-certificate) below.
+> Don't have a certificate yet? See [Step 3 — Get a Free SSL Certificate](#step-3--get-a-free-ssl-certificate) below.
 
-### 5. Deploy
+---
+
+## Step 3 — Get a Free SSL Certificate
+
+Use [Certbot](https://certbot.eff.org/) with Let's Encrypt. Your domain's DNS must already point to this server before running these commands.
+
+### 1. Install Certbot
+
+```bash
+# Ubuntu / Debian
+sudo apt install -y certbot
+
+# CentOS / RHEL
+sudo yum install -y certbot
+```
+
+### 2. Issue the certificate
+
+```bash
+# Stop anything using port 80 first (if needed)
+sudo certbot certonly --standalone -d kuma.your-domain.com
+```
+
+### 3. Copy certificates to the project
+
+```bash
+cp /etc/letsencrypt/live/kuma.your-domain.com/fullchain.pem nginx/certs/tls.crt
+cp /etc/letsencrypt/live/kuma.your-domain.com/privkey.pem   nginx/certs/tls.key
+```
+
+> Certificates expire every 90 days. Set up auto-renewal:
+> ```bash
+> sudo systemctl enable --now certbot.timer
+> # Verify the timer is active
+> sudo systemctl status certbot.timer
+> ```
+
+---
+
+## Step 4 — Deploy
+
+### 1. Make the deploy script executable
 
 ```bash
 chmod +x deploy.sh
+```
+
+### 2. Start all services
+
+```bash
 ./deploy.sh up
 ```
 
-Uptime Kuma will be available at `https://kuma.domain.com`.
+This will pull all images, start MariaDB, wait for it to be healthy, then start Uptime Kuma, then Nginx.
+
+### 3. Verify everything is running
+
+```bash
+./deploy.sh status
+```
+
+Expected output:
+```
+NAME         IMAGE                      STATUS
+kuma-db      mariadb:11                 Up (healthy)
+kuma-app     louislam/uptime-kuma:2     Up (healthy)
+kuma-nginx   nginx:alpine               Up (healthy)
+```
+
+Uptime Kuma is now available at `https://kuma.your-domain.com`.
 
 ---
 
@@ -141,13 +317,25 @@ KU_DB_PASSWORD=your_new_password    # keep in sync with above
 MARIADB_ROOT_PASSWORD=your_root_password
 ```
 
-After changing passwords on a fresh install, just re-run `./deploy.sh up`.
-If the database already exists, you must also update the password inside MariaDB:
+After changing passwords on a **fresh install** (no existing volume), re-run `./deploy.sh up`.
+
+If the **database volume already exists**, update the password inside MariaDB too:
 
 ```bash
 docker exec -it kuma-db mariadb -u root -p
 ALTER USER 'kuma'@'%' IDENTIFIED BY 'your_new_password';
 FLUSH PRIVILEGES;
+EXIT;
+```
+
+### Password mismatch — reset the database volume
+
+If you see `Access denied` and want to start fresh (no existing data to keep):
+
+```bash
+./deploy.sh down
+docker volume rm db-data
+./deploy.sh up
 ```
 
 ### Change the Uptime Kuma version
@@ -156,7 +344,7 @@ File: `docker-compose.yml`
 
 ```yaml
 kuma-app:
-  image: louislam/uptime-kuma:2      # pin to a specific version e.g. 2.2.0
+  image: louislam/uptime-kuma:2.2.0   # pin to a specific version
 ```
 
 ### Change the MariaDB version
@@ -165,7 +353,7 @@ File: `docker-compose.yml`
 
 ```yaml
 kuma-db:
-  image: mariadb:11                  # e.g. mariadb:10.11 for LTS
+  image: mariadb:10.11   # e.g. 10.11 for LTS
 ```
 
 ### Change the listening ports
@@ -181,28 +369,6 @@ kuma-nginx:
 
 ---
 
-## Get a Free SSL Certificate
-
-If you don't have a certificate, use [Certbot](https://certbot.eff.org/) with Let's Encrypt:
-
-```bash
-# Install certbot
-apt install certbot
-
-# Issue certificate (DNS must point to this server first)
-certbot certonly --standalone -d kuma.your-domain.com
-
-# Certificates will be at:
-# /etc/letsencrypt/live/kuma.your-domain.com/fullchain.pem  → tls.crt
-# /etc/letsencrypt/live/kuma.your-domain.com/privkey.pem    → tls.key
-
-# Copy to project
-cp /etc/letsencrypt/live/kuma.your-domain.com/fullchain.pem nginx/certs/tls.crt
-cp /etc/letsencrypt/live/kuma.your-domain.com/privkey.pem   nginx/certs/tls.key
-```
-
----
-
 ## Data & Backups
 
 Persistent data is stored in Docker named volumes:
@@ -214,12 +380,15 @@ Persistent data is stored in Docker named volumes:
 
 ### Backup
 
+**1. Backup the database**
 ```bash
-# Backup database
-docker exec kuma-db mariadb-dump -u root -p${MARIADB_ROOT_PASSWORD} uptimekuma \
+docker exec kuma-db mariadb-dump \
+  -u root -p${MARIADB_ROOT_PASSWORD} uptimekuma \
   > backup_$(date +%F).sql
+```
 
-# Backup Uptime Kuma data
+**2. Backup Uptime Kuma data**
+```bash
 docker run --rm \
   -v kuma-data:/data \
   -v $(pwd):/backup \
@@ -228,19 +397,47 @@ docker run --rm \
 
 ### Restore
 
+**1. Restore the database**
 ```bash
-# Restore database
-docker exec -i kuma-db mariadb -u root -p${MARIADB_ROOT_PASSWORD} uptimekuma \
+docker exec -i kuma-db mariadb \
+  -u root -p${MARIADB_ROOT_PASSWORD} uptimekuma \
   < backup_2026-01-01.sql
+```
+
+**2. Restore Uptime Kuma data**
+```bash
+docker run --rm \
+  -v kuma-data:/data \
+  -v $(pwd):/backup \
+  alpine tar xzf /backup/kuma-data_2026-01-01.tar.gz -C /
 ```
 
 ---
 
 ## Troubleshooting
 
-### nginx: host not found in upstream "kuma-app"
+### `Access denied for user 'kuma'`
 
-Nginx started before `kuma-app` was ready. The config uses Docker's internal DNS resolver (`127.0.0.11`) with a variable upstream to handle this gracefully. If it still happens, restart nginx:
+The DB password in `.env` doesn't match what's stored in the volume (common after changing `.env` on an existing install).
+
+**Fix — reset the volume (no existing data):**
+```bash
+./deploy.sh down
+docker volume rm db-data
+./deploy.sh up
+```
+
+**Fix — update password in running DB (keep existing data):**
+```bash
+docker exec -it kuma-db mariadb -u root -p
+ALTER USER 'kuma'@'%' IDENTIFIED BY 'your_new_password';
+FLUSH PRIVILEGES;
+EXIT;
+```
+
+### `host not found in upstream "kuma-app"`
+
+Nginx started before `kuma-app` was ready. If it still happens after `./deploy.sh up`:
 
 ```bash
 docker restart kuma-nginx
@@ -248,24 +445,34 @@ docker restart kuma-nginx
 
 ### Uptime Kuma cannot connect to database
 
-Check that `.env` credentials match, then verify the DB is healthy:
-
+**1. Check DB is healthy**
 ```bash
-./deploy.sh logs kuma-db
 ./deploy.sh status
+./deploy.sh logs kuma-db
 ```
 
-### View logs for a specific service
+**2. Verify credentials match in `.env`**
+```bash
+grep PASSWORD .env
+```
+
+**3. Test connection manually**
+```bash
+docker exec -it kuma-db mariadb -u kuma -p uptimekuma
+```
+
+### View logs
 
 ```bash
-./deploy.sh logs kuma-db
-./deploy.sh logs kuma-app
-./deploy.sh logs kuma-nginx
+./deploy.sh logs             # all services
+./deploy.sh logs kuma-db     # database only
+./deploy.sh logs kuma-app    # Uptime Kuma only
+./deploy.sh logs kuma-nginx  # Nginx only
 ```
 
 ### Reset everything (destructive)
 
 ```bash
-./deploy.sh destroy    # removes containers AND volumes (all data lost)
+./deploy.sh destroy   # removes containers AND volumes — all data lost
 ./deploy.sh up
 ```
