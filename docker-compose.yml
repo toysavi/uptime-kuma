@@ -1,0 +1,97 @@
+version: "3.9"
+
+# ================================================================
+#  Uptime Kuma stack
+#  - MariaDB       (database)
+#  - Uptime Kuma   (official image — no custom build)
+#  - Nginx         (SSL reverse proxy)
+#
+#  Layout:
+#    project/
+#    ├── .env
+#    ├── deploy.sh
+#    ├── docker-compose.yml
+#    ├── nginx/
+#    │   ├── default.conf
+#    │   └── certs/
+#    │       ├── tls.crt
+#    │       └── tls.key
+# ================================================================
+
+services:
+
+  kuma-db:
+    container_name: kuma-db
+    image: mariadb:11
+    environment:
+      MARIADB_ROOT_PASSWORD: ${MARIADB_ROOT_PASSWORD}
+      MARIADB_DATABASE:      ${MARIADB_DATABASE}
+      MARIADB_USER:          ${MARIADB_USER}
+      MARIADB_PASSWORD:      ${MARIADB_PASSWORD}
+    volumes:
+      - db-data:/var/lib/mysql
+    networks:
+      - kuma-net
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 30s
+    restart: unless-stopped
+
+  kuma-app:
+    container_name: kuma-app
+    image: louislam/uptime-kuma:2
+    environment:
+      DB_TYPE:     ${KU_DB_TYPE}
+      DB_HOST:     ${KU_DB_HOST}
+      DB_PORT:     ${KU_DB_PORT}
+      DB_NAME:     ${KU_DB_NAME}
+      DB_USER:     ${KU_DB_USER}
+      DB_PASSWORD: ${KU_DB_PASSWORD}
+    volumes:
+      - kuma-data:/app/data
+      - /var/run/docker.sock:/var/run/docker.sock
+    networks:
+      - kuma-net
+    depends_on:
+      kuma-db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:3001/api/status-page/heartbeat || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 40s
+    restart: unless-stopped
+
+  kuma-nginx:
+    container_name: kuma-nginx
+    image: nginx:alpine
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/default.conf:/etc/nginx/conf.d/default.conf
+      - ./nginx/certs:/etc/nginx/certs:ro
+    networks:
+      - kuma-net
+    depends_on:
+      kuma-app:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "nginx -t 2>/dev/null && curl -sf http://localhost/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    restart: unless-stopped
+
+networks:
+  kuma-net:
+    driver: bridge
+
+volumes:
+  db-data:
+  kuma-data:
