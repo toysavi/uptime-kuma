@@ -2,52 +2,69 @@ version: "3.9"
 
 services:
 
-  kuma-app:
-    image: louislam/uptime-kuma:2.2.0
-    environment:
-      DB_TYPE: mysql
-      DB_HOST: kuma-mysql
-      DB_PORT: 3306
-      DB_NAME: uptimekuma
-      DB_USER: kuma
-      DB_PASSWORD: kumapass
-    volumes:
-      - kuma-data:/app/data
-      - /var/run/docker.sock:/var/run/docker.sock   # for container monitoring
-    networks:
-      - kuma-net
-    ports:
-      - "3001:3001"
-    deploy:
-      replicas: 1
-      restart_policy:
-        condition: on-failure
-      update_config:
-        parallelism: 1
-        delay: 10s
-      labels:
-        - kuma.monitor=true
-        - kuma.service=kuma-app
-
   kuma-mysql:
     image: mysql:8.0
     environment:
-      MYSQL_ROOT_PASSWORD: rootpassword
-      MYSQL_DATABASE: uptimekuma
-      MYSQL_USER: kuma
-      MYSQL_PASSWORD: kumapass
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE:      ${MYSQL_DATABASE}
+      MYSQL_USER:          ${MYSQL_USER}
+      MYSQL_PASSWORD:      ${MYSQL_PASSWORD}
     volumes:
       - mysql-data:/var/lib/mysql
       - ./init-scripts:/docker-entrypoint-initdb.d
     networks:
       - kuma-net
-    deploy:
-      replicas: 1
-      restart_policy:
-        condition: on-failure
-      labels:
-        - kuma.monitor=true
-        - kuma.service=kuma-mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost",
+             "-u", "root", "--password=${MYSQL_ROOT_PASSWORD}"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 30s
+    restart: on-failure
+
+  kuma-app:
+    # ── Build your own image instead of pulling from Docker Hub ──
+    build:
+      context: .                  # folder containing Dockerfile
+      dockerfile: Dockerfile
+      args:
+        # These become the baked-in ENV defaults inside the image.
+        # They can still be overridden at runtime via `environment:`
+        # below, which takes precedence.
+        DB_TYPE:     ${KU_DB_TYPE}
+        DB_HOST:     ${KU_DB_HOST}
+        DB_PORT:     ${KU_DB_PORT}
+        DB_NAME:     ${KU_DB_NAME}
+        DB_USER:     ${KU_DB_USER}
+        DB_PASSWORD: ${KU_DB_PASSWORD}
+    # Tag the built image so rolling updates and caching work
+    image: my-uptime-kuma:latest
+    environment:
+      # Runtime override — always wins over baked-in ARG defaults
+      DB_TYPE:     ${KU_DB_TYPE}
+      DB_HOST:     ${KU_DB_HOST}
+      DB_PORT:     ${KU_DB_PORT}
+      DB_NAME:     ${KU_DB_NAME}
+      DB_USER:     ${KU_DB_USER}
+      DB_PASSWORD: ${KU_DB_PASSWORD}
+    volumes:
+      - kuma-data:/app/data
+      - /var/run/docker.sock:/var/run/docker.sock
+    networks:
+      - kuma-net
+    ports:
+      - "3001:3001"
+    depends_on:
+      kuma-mysql:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:3001/api/status-page/heartbeat || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    restart: on-failure
 
   kuma-nginx:
     image: nginx:alpine
@@ -59,17 +76,20 @@ services:
       - ./nginx/certs:/etc/nginx/certs:ro
     networks:
       - kuma-net
-    deploy:
-      replicas: 1
-      restart_policy:
-        condition: on-failure
-      labels:
-        - kuma.monitor=true
-        - kuma.service=kuma-nginx
+    depends_on:
+      kuma-app:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost/health || nginx -t"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    restart: on-failure
 
 networks:
   kuma-net:
-    driver: overlay
+    driver: bridge
 
 volumes:
   mysql-data:
