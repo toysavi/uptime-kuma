@@ -42,7 +42,7 @@ services:
 
   kuma-app:
     container_name: kuma-app
-    image: louislam/uptime-kuma:2
+    image: louislam/uptime-kuma:latest
     environment:
       DB_TYPE:     ${KU_DB_TYPE}
       DB_HOST:     ${KU_DB_HOST}
